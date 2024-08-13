@@ -4,7 +4,7 @@ import pg from "pg";
 import bcrypt from "bcrypt";
 import passport from "passport";
 import { Strategy } from "passport-local";   // Local strategy to authenticate user
-import GoogleStrategy from "passport-google-oath2";  // Google authentication strategy
+import GoogleStrategy from "passport-google-oauth2";  // Google authentication strategy
 import session from "express-session";
 import env from "dotenv"; 
 
@@ -15,7 +15,7 @@ env.config();  // Environment variable configuration
 
 // passport session configuration. Acts as middleware to some extent.
 app.use(session({
-  secret: "TOPSECTRETWORD",
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true,
   })
@@ -23,10 +23,10 @@ app.use(session({
 
 // Normal middleware from body parser
 app.use(bodyParser.urlencoded({ extended: true }));
-// Something about using static files for stylig and rendering
+// Something about using static files for styling and rendering
 app.use(express.static("public"));
 
-// Initialization of passport and then the passport session directly after and never session before init. Syustem will crash
+// Initialization of passport and then the passport session directly after and never session before init. System will crash
 app.use(passport.initialize());
 app.use(passport.session()); 
 
@@ -35,11 +35,11 @@ app.use(passport.session());
 
 // pg configuration
 const db = new pg.Client({
-  user: "process.env.PG_USER",
-  host: "process.env.PG_HOST",
-  database: "process.env.PG_DATABASE",
-  password: "process.env.PG_PASSWORD",
-  port: "process.env.PG_PORT",
+  user: process.env.PG_USER,
+  host: process.env.PG_HOST,
+  database: process.env.PG_DATABASE,
+  password: process.env.PG_PASSWORD,
+  port: process.env.PG_PORT,
   cookie: {
     maxAge: 1000 * 60 * 15,      // Trying to have a session age of 15 mins instead of 24 hours
   }
@@ -128,6 +128,12 @@ app.get("/auth/google/secrets",              // Get method for after the oauth l
     failureRedirect:"login", 
 })); 
 
+app.get("/logout", (req,res) => {
+  req.logout((err) => {
+    if (err) console.log(err);
+    res.redirect("/"); 
+  });
+});
 
 
 
@@ -142,9 +148,9 @@ passport.use("local", new Strategy(async function verify(username, password, cb)
     if (result.rows.length > 0) {
       const user = result.rows[0];
       const storedHashedPassword = user.password;
-      bcrypt.compare(loginPassword, storedHashedPassword, (err, result) => {
+      bcrypt.compare(password, storedHashedPassword, (err, result) => {
         if (err) {
-          return cd(err);
+          return cb(err);
         } else {
           if (result) {
             return cb(null, user);
@@ -165,11 +171,25 @@ passport.use("local", new Strategy(async function verify(username, password, cb)
 passport.use("google", new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET, 
-  callbackURL: "http://localhost3000/auth/google/secrets",
+  callbackURL: "http://localhost:3000/auth/google/secrets",
   userProfileURL: "http://www.googleapis.com/oauth/v3/userinfo",
-}), async (accessToken, refreshToken, profile, cb) => {
+}, async (accessToken, refreshToken, profile, cb) => {
   console.log(profile);
-}); 
+  try {
+    const result = await db.query("SELECT * FROM users WHERE email = $1", 
+    [profile.email,]);
+    if (result.rows.length === 0){
+      const newUser = await db.query("INSERT INTO users (email, password) VALUES ($1, $2)", [profile.email,"google"])
+      cd(null, newUser.rows[0]); 
+    } else {
+      cd(null, result.rows[0]); 
+    }
+  } catch (err){
+    cb(err);
+  }
+})); 
+
+
 
 
 // Passport's serializeUser function is responsible for deciding what part of the user object gets stored in the session. 
