@@ -128,7 +128,7 @@ app.get("/auth/google/secrets",              // Get method for after the oauth l
     failureRedirect:"login", 
 })); 
 
-app.get("/logout", (req,res) => {
+app.get("/logout", (req,res) => {            // Lastly the log out method
   req.logout((err) => {
     if (err) console.log(err);
     res.redirect("/"); 
